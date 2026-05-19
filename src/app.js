@@ -12,29 +12,62 @@ const userRoutes = require("./routes/users");
 
 const app = express();
 
-const allowedOrigin = process.env.CLIENT_URL || "http://localhost:3000";
+const allowedOrigins = (process.env.CLIENT_URL || "http://localhost:3000")
+  .split(",")
+  .map((origin) => origin.trim());
 
-app.use(
-  cors({
-    origin: allowedOrigin,
-    credentials: true,
-    allowedHeaders: ["Content-Type", "Authorization", "x-product-id"],
-    methods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
-  })
-);
+const corsOptions = {
+  origin(origin, callback) {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+      return;
+    }
+
+    callback(new Error(`CORS blocked origin: ${origin}`));
+  },
+  credentials: true,
+  methods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+  allowedHeaders: [
+    "Content-Type",
+    "Authorization",
+    "x-product-id",
+    "x-uploadthing-package",
+    "x-uploadthing-version",
+    "x-uploadthing-fe-package",
+    "uploadthing-hook",
+    "x-uploadthing-signature",
+  ],
+};
+
+app.use(cors({
+  origin: true,
+  credentials: true,
+}));
+
+app.options("*", cors());
 
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));
 
 app.get("/api/health", (req, res) => {
-  res.json({ success: true, message: "BrandHub API is running", env: process.env.NODE_ENV });
+  res.json({
+    success: true,
+    message: "BrandHub API is running",
+    env: process.env.NODE_ENV,
+  });
 });
+
+const apiUrl = process.env.API_URL || `http://localhost:${process.env.PORT || 5000}`;
 
 app.use(
   "/api/uploadthing",
   createRouteHandler({
     router: uploadRouter,
-    config: { isDev: process.env.NODE_ENV !== "production" },
+    config: {
+      token: process.env.UPLOADTHING_TOKEN,
+      isDev: process.env.NODE_ENV !== "production",
+      callbackUrl: `${apiUrl}/api/uploadthing`,
+    },
   })
 );
 
@@ -45,7 +78,10 @@ app.use("/api/orders", orderRoutes);
 app.use("/api/users", userRoutes);
 
 app.use((req, res) => {
-  res.status(404).json({ success: false, message: `Route ${req.originalUrl} not found.` });
+  res.status(404).json({
+    success: false,
+    message: `Route ${req.originalUrl} not found.`,
+  });
 });
 
 app.use(errorHandler);
